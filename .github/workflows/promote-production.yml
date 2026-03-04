@@ -18,7 +18,6 @@ jobs:
     permissions:
       packages: write
       contents: write
-      security-events: write
 
     steps:
       - name: Checkout code
@@ -81,7 +80,7 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Run Trivy security scan (fail on critical)
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@0.34.2
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tags.outputs.staging_tag }}
           format: table
