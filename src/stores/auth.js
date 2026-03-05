@@ -72,7 +72,10 @@ export const useAuthStore = defineStore('auth', () => {
         localStorage.setItem(AUTH_USER_KEY, nextUsername)
       }
     } catch (err) {
-      clearSession()
+      const status = err.response?.status
+      if (status === 401 || status === 403) {
+        clearSession()
+      }
     }
   }
 

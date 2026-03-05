@@ -53,12 +53,6 @@ reviews:
       instructions: |
         - Repository guidelines for AI agents — learn and apply these principles
   path_filters:
-    - "src/**/*.vue"
-    - "src/**/*.js"
-    - "**/Dockerfile"
-    - "nginx/**"
-    - "**/.github/workflows/*.yml"
-    - "**/CLAUDE.md"
     - "!**/node_modules/**"
     - "!**/dist/**"
   tools:
