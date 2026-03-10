@@ -70,6 +70,11 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:8080/ || exit 1
 
+# Re-declare build args for this stage (ARGs don't cross stage boundaries)
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+
 # Labels for metadata
 LABEL org.opencontainers.image.title="SRE Frontend" \
       org.opencontainers.image.description="Vue 3 SPA for SRE Control Plane" \
