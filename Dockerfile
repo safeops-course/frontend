@@ -25,8 +25,8 @@ RUN npm run build
 # Stage 2: Serve with nginx
 FROM nginx:1.28-alpine
 
-# Install curl for health checks
-RUN apk add --no-cache curl
+# Patch OS-level vulnerabilities and install curl for health checks
+RUN apk upgrade --no-cache && apk add --no-cache curl
 
 # Copy custom nginx configuration
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
