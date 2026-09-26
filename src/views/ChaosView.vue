@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useBackendStore } from '../stores/backend'
 import { useAuthStore } from '../stores/auth'
 import { api } from '../services/api'
@@ -9,7 +9,18 @@ const backendStore = useBackendStore()
 const authStore = useAuthStore()
 
 const isAuthenticated = computed(() => authStore.isAuthenticated)
+// The backend exposes /panic and the probe toggles only with CHAOS_ENABLED=true and says so in
+// /version. An older backend has no such field: treat that as enabled (the old behaviour).
+const chaosEnabled = computed(() => backendStore.version?.chaos_enabled !== false)
+// Must match the backend's DELAY_MAX_SECONDS default; larger values get HTTP 400.
+const maxDelaySeconds = 10
 const delaySeconds = ref(2)
+
+onMounted(() => {
+  if (!backendStore.version) {
+    backendStore.fetchVersion()
+  }
+})
 const statusCode = ref(500)
 const message = ref('')
 
@@ -46,6 +57,10 @@ async function toggleLiveness(enable) {
 }
 
 async function triggerDelay() {
+  if (!(delaySeconds.value >= 0 && delaySeconds.value <= maxDelaySeconds)) {
+    message.value = `Delay must be between 0 and ${maxDelaySeconds} seconds.`
+    return
+  }
   try {
     message.value = `Triggering ${delaySeconds.value}s delay...`
     await withSpan('ui.chaos.trigger_delay', { 'chaos.delay.seconds': delaySeconds.value }, () =>
@@ -94,7 +109,12 @@ async function triggerPanic() {
       <p class="text-slate-400">Test resilience and failure scenarios</p>
     </div>
 
-    <div v-if="!isAuthenticated" class="bg-amber-900/40 border border-amber-700 rounded-lg p-4 text-amber-300 text-sm">
+    <div v-if="!chaosEnabled" class="bg-slate-800 border border-slate-600 rounded-lg p-4 text-slate-300 text-sm">
+      Readiness/liveness controls and crash simulation are turned off in this environment
+      (<code>CHAOS_ENABLED=false</code>). Delay and status code tests still work.
+    </div>
+
+    <div v-else-if="!isAuthenticated" class="bg-amber-900/40 border border-amber-700 rounded-lg p-4 text-amber-300 text-sm">
       Anonymous mode: you can test delay/status, but readiness/liveness/panic are available only for authenticated users.
     </div>
 
@@ -104,7 +124,7 @@ async function triggerPanic() {
     </div>
 
     <!-- Probe Controls -->
-    <div class="bg-slate-800 rounded-lg border border-slate-700 p-6">
+    <div v-if="chaosEnabled" class="bg-slate-800 rounded-lg border border-slate-700 p-6">
       <h3 class="text-lg font-semibold text-white mb-4">Health Probe Controls</h3>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
@@ -167,7 +187,7 @@ async function triggerPanic() {
             v-model.number="delaySeconds"
             type="number"
             min="0"
-            max="30"
+            :max="maxDelaySeconds"
             step="0.5"
             class="w-full px-4 py-2 bg-slate-700 text-white rounded-lg border border-slate-600 focus:border-blue-500 focus:outline-none"
           />
@@ -180,7 +200,7 @@ async function triggerPanic() {
         </button>
       </div>
       <p class="mt-2 text-xs text-slate-400">
-        Artificially delay the response to test timeout handling
+        Artificially delay the response to test timeout handling (0-{{ maxDelaySeconds }} s)
       </p>
     </div>
 
@@ -213,7 +233,7 @@ async function triggerPanic() {
     </div>
 
     <!-- Panic / Crash -->
-    <div class="bg-slate-800 rounded-lg border border-red-900/50 p-6">
+    <div v-if="chaosEnabled" class="bg-slate-800 rounded-lg border border-red-900/50 p-6">
       <h3 class="text-lg font-semibold text-red-400 mb-4">⚠️ Crash Simulation</h3>
       <button
         @click="triggerPanic"

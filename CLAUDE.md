@@ -113,7 +113,7 @@ The app uses `window.__ENV__` for runtime config, injected by nginx entrypoint s
 
 | Env Var | Description |
 |---|---|
-| `VITE_API_URL` | Backend API base URL |
+| `VITE_API_URL` | Backend API base URL (default `/api`, same origin) |
 | `VITE_UPTRACE_DSN` | Uptrace DSN for browser tracing |
 | `ENVIRONMENT` | Current environment name |
 | `VERSION` | App version |
@@ -128,7 +128,11 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 - SPA routing: all routes fall back to `index.html`
 - `/config.js` served from `/tmp/config.js` (runtime-generated) with no-cache headers
 - `/health` endpoint returns 200 for container health checks
-- Security headers: X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy
+- `/api/` proxies only an allowlist of backend routes (regex location); other `/api/...` paths are 404
+- Security headers (CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy) live in
+  `nginx/security-headers.conf` and are included in EVERY location (nginx does not inherit add_header
+  into a location that has its own). No inline scripts in index.html (CSP `script-src 'self'`).
+- Local dev: Vite proxies `/api` to the backend (`BACKEND_URL`, default localhost:8080); no CORS
 - Static assets cached for 1 year with immutable flag
 
 ## CI/CD
