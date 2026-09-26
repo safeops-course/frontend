@@ -57,7 +57,9 @@ async function toggleLiveness(enable) {
 }
 
 async function triggerDelay() {
-  if (!(delaySeconds.value >= 0 && delaySeconds.value <= maxDelaySeconds)) {
+  // An emptied number input gives '' (which compares as 0), so require a real finite number first.
+  const seconds = delaySeconds.value
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0 || seconds > maxDelaySeconds) {
     message.value = `Delay must be between 0 and ${maxDelaySeconds} seconds.`
     return
   }

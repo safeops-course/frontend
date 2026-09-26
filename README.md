@@ -83,7 +83,11 @@ The production build uses a multi-stage Dockerfile:
 
 ```bash
 docker build -t frontend:local .
-docker run -p 8080:8080 frontend:local   # proxies /api to http://backend:80 (the cluster Service)
+# nginx resolves "backend" (proxy_pass http://backend:80, the cluster Service) at startup and exits
+# with "host not found in upstream" if it cannot - so run a backend on the same network:
+docker network create sre-local
+docker run -d --name backend --network sre-local -e PORT=80 -e JWT_SECRET="$(openssl rand -hex 32)" ghcr.io/safeops-course/backend:<tag>
+docker run --rm --network sre-local -p 8080:8080 frontend:local
 ```
 
 ## Local Development
