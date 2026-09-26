@@ -96,7 +96,7 @@ Dockerfile                   # Multi-stage: node builder → nginx runtime
 - **Axios** for HTTP client
 - **ApexCharts** (vue3-apexcharts) for dashboard charts
 - **OpenTelemetry** browser SDK for distributed tracing
-- **nginx 1.28-alpine** for production serving
+- **nginx 1.30-alpine** (current stable) for production serving
 
 ## Build & Run
 
@@ -133,7 +133,8 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 
 ## CI/CD
 
-- **build.yml** — on push to main/develop: build multi-platform Docker image (amd64+arm64), push to GHCR, Trivy scan (non-blocking)
+- **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; gitleaks v8.30.1 on the PR commits
+- **build.yml** — on push to main/develop: build the linux/amd64 image locally and **Trivy-scan it before anything is pushed** (blocking on fixable CRITICAL/HIGH), then build multi-platform (amd64+arm64), push to GHCR, cosign sign + SBOM attestation
 - **promote-production.yml** — manual: Trivy gate (blocking, CRITICAL only), re-tag staging image as production, create GitHub Release, bump version tag
 
 ## Coding Guidelines
@@ -143,4 +144,4 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 - No test framework configured — keep it simple
 - Tailwind CSS v4 uses CSS-first configuration (no tailwind.config.js)
 - Docker image runs as non-root user `appuser` (uid 10001)
-- Trivy scans are non-blocking in CI (build), blocking for production promotion
+- Trivy blocks in CI before push (build.yml, fixable CRITICAL/HIGH) and again at production promotion
