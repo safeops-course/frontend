@@ -55,13 +55,20 @@ function allowedCollectorUrl(url) {
   if (!url || !import.meta.env.PROD) {
     return url
   }
-  let origin
+  let parsed
   try {
-    origin = new URL(url, window.location.origin).origin
+    parsed = new URL(url, window.location.origin)
   } catch {
     console.warn('[Telemetry] Invalid collector URL, spans are not exported:', url)
     return ''
   }
+  // Only http(s): e.g. blob:https://<page-origin>/... has the page's origin but is not allowed by
+  // connect-src, and an OTLP exporter needs an HTTP endpoint anyway.
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    console.warn(`[Telemetry] Collector URL scheme ${parsed.protocol} is not http(s); spans are not exported`)
+    return ''
+  }
+  const origin = parsed.origin
   if (origin === window.location.origin || origin === UPTRACE_ORIGIN) {
     return url
   }
