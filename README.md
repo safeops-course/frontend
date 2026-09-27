@@ -37,13 +37,18 @@ The app uses `window.__ENV__` for runtime config, injected by an nginx entrypoin
 | `COMMIT` | Git commit SHA |
 | `BUILD_DATE` | Build timestamp |
 
-Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
+`VITE_OTEL_COLLECTOR_URL` (an OTLP/HTTP traces endpoint) is **not** a runtime setting of the image:
+the entrypoint does not write it to `config.js`. Set it at build time or for `npm run dev`. In the
+nginx image the CSP allows `connect-src` only to `'self'` and `https://api.uptrace.dev`, so a
+collector on another origin is blocked there; use `VITE_UPTRACE_DSN` in deployed environments.
+
+Fallback chain: `window.__ENV__` → `import.meta.env` → defaults (API `/api`, same origin; no trace export without `VITE_UPTRACE_DSN` or `VITE_OTEL_COLLECTOR_URL`).
 
 ## CI/CD
 
 Two GitHub Actions workflows:
 
-- **build.yml** — triggers on push to `main`/`develop`: builds multi-platform Docker image (linux/amd64 + linux/arm64), pushes to GHCR, signs with cosign (keyless), generates SBOM attestation (SPDX), after a blocking Trivy scan of the linux/amd64 and linux/arm64 images that runs **before** the push
+- **build.yml** — triggers on push to `main`/`develop`: builds linux/amd64 and linux/arm64 locally, Trivy-scans both (blocking, **before** anything is pushed), pushes exactly those scanned images and joins them into one multi-platform index, then signs it with cosign (keyless) and attaches an SBOM attestation (SPDX)
 - **pr.yml** — every pull request: npm ci/build, `npm audit` (high, production deps), docker build + `nginx -t`, gitleaks on the PR commits
 - **promote-production.yml** — manual trigger: runs Trivy scan (blocking on CRITICAL), re-tags staging image as production, creates GitHub Release, bumps version tag
 
