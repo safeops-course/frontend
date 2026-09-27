@@ -49,7 +49,7 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → defaults (API `/api`,
 
 Two GitHub Actions workflows:
 
-- **build.yml** — triggers on push to `main`/`develop`: builds linux/amd64 and linux/arm64 locally, Trivy-scans both (blocking, **before** anything is pushed), pushes exactly those scanned images and joins them into one multi-platform index, then signs it with cosign (keyless) and attaches an SBOM attestation (SPDX)
+- **build.yml** — triggers on push to `main`/`develop`: builds linux/amd64 and linux/arm64 locally, Trivy-scans both (blocking, **before** anything is pushed), pushes exactly those scanned images and joins them into one multi-platform index, then signs it with cosign (keyless) and attaches an SBOM attestation (SPDX) + SLSA build provenance (`actions/attest-build-provenance`, verify with `gh attestation verify`)
 - **pr.yml** — every pull request: npm ci/build, `npm audit` (high, production deps), docker build + `nginx -t`, gitleaks on the PR commits
 - **promote-production.yml** — manual trigger: runs Trivy scan (blocking on CRITICAL), re-tags staging image as production, creates GitHub Release, bumps version tag
 
