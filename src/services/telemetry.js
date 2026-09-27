@@ -45,24 +45,62 @@ function buildTraceHeaderCorsUrls(apiUrl) {
   return rules
 }
 
+// The only collector origins the image's CSP allows (nginx/security-headers.conf, connect-src):
+// the page's own origin and Uptrace. Keep both lists in sync. `npm run dev` has no CSP.
+const UPTRACE_ORIGIN = 'https://api.uptrace.dev'
+
+// Returns the collector URL if the built app may send to it, or '' (with a warning) if the CSP
+// would block it - better to say so once than to lose every span silently.
+function allowedCollectorUrl(url) {
+  if (!url || !import.meta.env.PROD) {
+    return url
+  }
+  let parsed
+  try {
+    parsed = new URL(url, window.location.origin)
+  } catch {
+    console.warn('[Telemetry] Invalid collector URL, spans are not exported:', url)
+    return ''
+  }
+  // Only http(s): e.g. blob:https://<page-origin>/... has the page's origin but is not allowed by
+  // connect-src, and an OTLP exporter needs an HTTP endpoint anyway.
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    console.warn(`[Telemetry] Collector URL scheme ${parsed.protocol} is not http(s); spans are not exported`)
+    return ''
+  }
+  const origin = parsed.origin
+  if (origin === window.location.origin || origin === UPTRACE_ORIGIN) {
+    return url
+  }
+  console.warn(
+    `[Telemetry] Collector origin ${origin} is not allowed by the CSP (connect-src 'self' ${UPTRACE_ORIGIN}); spans are not exported`,
+  )
+  return ''
+}
+
 // Get configuration from environment
 const getConfig = () => {
   // Uptrace DSN format: https://TOKEN@api.uptrace.dev
   const uptraceDsn = window.__ENV__?.VITE_UPTRACE_DSN || import.meta.env.VITE_UPTRACE_DSN || ''
   const apiUrl = window.__ENV__?.VITE_API_URL || import.meta.env.VITE_API_URL || window.location.origin
 
-  let collectorUrl = window.__ENV__?.VITE_OTEL_COLLECTOR_URL || import.meta.env.VITE_OTEL_COLLECTOR_URL || 'http://localhost:4318/v1/traces'
+  // No default collector: a fallback to http://localhost:4318 made every visitor's browser send
+  // requests to a port on the visitor's own machine. Without a DSN or an explicit collector URL,
+  // spans are created (trace context still reaches the backend) but not exported.
+  let collectorUrl = window.__ENV__?.VITE_OTEL_COLLECTOR_URL || import.meta.env.VITE_OTEL_COLLECTOR_URL || ''
   let headers = {}
 
   // If Uptrace DSN is set, use Uptrace directly
   if (uptraceDsn) {
-    collectorUrl = 'https://api.uptrace.dev/v1/traces'
+    collectorUrl = `${UPTRACE_ORIGIN}/v1/traces`
     // Extract token from DSN (format: https://TOKEN@api.uptrace.dev)
     const match = uptraceDsn.match(/https:\/\/([^@]+)@/)
     if (match) {
       headers['uptrace-dsn'] = uptraceDsn
     }
   }
+
+  collectorUrl = allowedCollectorUrl(collectorUrl)
 
   return {
     serviceName: 'frontend',
@@ -97,22 +135,29 @@ export function initTelemetry() {
   }
   const resource = resourceFromAttributes(resourceAttrs)
 
-  // Configure OTLP HTTP exporter
-  const exporter = new OTLPTraceExporter({
-    url: config.collectorUrl,
-    headers: config.headers,
-  })
-
-  // Create tracer provider with span processor (v2.x API)
-  const provider = new WebTracerProvider({
-    resource,
-    spanProcessors: [
+  // Export only to a configured destination (Uptrace DSN or VITE_OTEL_COLLECTOR_URL). The CSP in
+  // nginx/security-headers.conf allows connect-src to 'self' and https://api.uptrace.dev only.
+  const spanProcessors = []
+  if (config.collectorUrl) {
+    const exporter = new OTLPTraceExporter({
+      url: config.collectorUrl,
+      headers: config.headers,
+    })
+    spanProcessors.push(
       new BatchSpanProcessor(exporter, {
         maxQueueSize: 100,
         maxExportBatchSize: 10,
         scheduledDelayMillis: 500,
       }),
-    ],
+    )
+  } else {
+    console.log('[Telemetry] No Uptrace DSN or collector URL configured: spans are not exported')
+  }
+
+  // Create tracer provider (v2.x API)
+  const provider = new WebTracerProvider({
+    resource,
+    spanProcessors,
   })
 
   // Register with ZoneContextManager for async context propagation

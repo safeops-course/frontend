@@ -23,7 +23,7 @@ ARG BUILD_DATE=unknown
 RUN npm run build
 
 # Stage 2: Serve with nginx
-FROM nginx:1.28-alpine
+FROM nginx:1.30-alpine
 
 # Patch OS-level vulnerabilities and install curl for health checks
 RUN apk upgrade --no-cache && apk add --no-cache curl
@@ -31,6 +31,7 @@ RUN apk upgrade --no-cache && apk add --no-cache curl
 # Copy custom nginx configuration
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html

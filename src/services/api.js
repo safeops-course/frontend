@@ -26,8 +26,9 @@ function shouldSuppressErrorTelemetry(error) {
   return error?.code === 'ERR_NETWORK' || error?.response?.status >= 500
 }
 
-// Get backend URL from environment or default to localhost
-const API_BASE_URL = window.__ENV__?.VITE_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:8080'
+// Backend URL from the runtime config; default /api - same origin, through nginx in the image and
+// the Vite proxy in `npm run dev` (the backend sends no CORS headers).
+const API_BASE_URL = window.__ENV__?.VITE_API_URL || import.meta.env.VITE_API_URL || '/api'
 
 // Create axios instance with default config
 const apiClient = axios.create({

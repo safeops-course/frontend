@@ -22,7 +22,7 @@ SRE Control Plane Dashboard, part of the [SafeOps Academy](https://safeops.work/
 - **Axios** HTTP client
 - **ApexCharts** (vue3-apexcharts) dashboard charts
 - **OpenTelemetry** browser SDK for distributed tracing
-- **nginx 1.28-alpine** production serving
+- **nginx 1.30-alpine** production serving
 
 ## Runtime Configuration
 
@@ -37,13 +37,20 @@ The app uses `window.__ENV__` for runtime config, injected by an nginx entrypoin
 | `COMMIT` | Git commit SHA |
 | `BUILD_DATE` | Build timestamp |
 
-Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
+`VITE_OTEL_COLLECTOR_URL` (an OTLP/HTTP traces endpoint) is **not** a runtime setting of the image:
+the entrypoint does not write it to `config.js`. Set it at build time or for `npm run dev`. In the
+nginx image the CSP allows `connect-src` only to `'self'` and `https://api.uptrace.dev`; the built
+app accepts a collector URL only on those origins (a same-origin path works) and otherwise logs a
+warning and exports nothing. Use `VITE_UPTRACE_DSN` in deployed environments.
+
+Fallback chain: `window.__ENV__` → `import.meta.env` → defaults (API `/api`, same origin; no trace export without `VITE_UPTRACE_DSN` or `VITE_OTEL_COLLECTOR_URL`).
 
 ## CI/CD
 
 Two GitHub Actions workflows:
 
-- **build.yml** — triggers on push to `main`/`develop`: builds multi-platform Docker image (linux/amd64 + linux/arm64), pushes to GHCR, signs with cosign (keyless), generates SBOM attestation (SPDX), runs Trivy vulnerability scan (non-blocking)
+- **build.yml** — triggers on push to `main`/`develop`: builds linux/amd64 and linux/arm64 locally, Trivy-scans both (blocking, **before** anything is pushed), pushes exactly those scanned images and joins them into one multi-platform index, then signs it with cosign (keyless) and attaches an SBOM attestation (SPDX)
+- **pr.yml** — every pull request: npm ci/build, `npm audit` (high, production deps), docker build + `nginx -t`, gitleaks on the PR commits
 - **promote-production.yml** — manual trigger: runs Trivy scan (blocking on CRITICAL), re-tags staging image as production, creates GitHub Release, bumps version tag
 
 Images are pushed to `ghcr.io/safeops-course/frontend` with tags like `develop-v0.0.1-abc1234-1234567890`.
@@ -64,7 +71,13 @@ Image tags are automatically updated by Flux ImageUpdateAutomation.
 - SPA routing: all routes fall back to `index.html`
 - `/config.js` served from `/tmp/config.js` (runtime-generated, no-cache)
 - `/health` returns 200 for container health checks
-- Security headers: X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy
+- `/api/` proxies **only** the backend routes the SPA calls (regex in `nginx/default.conf`); every other
+  `/api/...` path is a 404 from nginx, so a new or debug backend route is not public by accident.
+  Adding a route there makes it public - review it first. Same origin, so no CORS headers.
+- Security headers on every response (`nginx/security-headers.conf`, included in the server block and in
+  every location, because a location with its own `add_header` inherits none): Content-Security-Policy
+  (`script-src 'self'`, no inline scripts; `connect-src` self + Uptrace), X-Frame-Options DENY,
+  X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy
 - Static assets cached for 1 year with immutable flag
 - Gzip compression enabled
 
@@ -73,11 +86,15 @@ Image tags are automatically updated by Flux ImageUpdateAutomation.
 The production build uses a multi-stage Dockerfile:
 
 1. **Builder stage** — `node:24-alpine`, `npm ci`, `npm run build`
-2. **Runtime stage** — `nginx:1.28-alpine`, non-root user (uid 10001), read-only root filesystem
+2. **Runtime stage** — `nginx:1.30-alpine`, non-root user (uid 10001), read-only root filesystem
 
 ```bash
 docker build -t frontend:local .
-docker run -p 8080:8080 -e VITE_API_URL=http://localhost:8080 frontend:local
+# nginx resolves "backend" (proxy_pass http://backend:80, the cluster Service) at startup and exits
+# with "host not found in upstream" if it cannot - so run a backend on the same network:
+docker network create sre-local
+docker run -d --name backend --network sre-local -e PORT=80 -e JWT_SECRET="$(openssl rand -hex 32)" ghcr.io/safeops-course/backend:<tag>
+docker run --rm --network sre-local -p 8080:8080 frontend:local
 ```
 
 ## Local Development
@@ -89,11 +106,9 @@ npm run build     # production build to dist/
 npm run preview   # preview production build
 ```
 
-Create a `.env` file for local dev:
-
-```env
-VITE_API_URL=http://localhost:8080
-```
+The browser calls `/api` on its own origin; the Vite dev server proxies it to the backend
+(`http://localhost:8080`, or `BACKEND_URL=... npm run dev`). The backend sends no CORS headers,
+so a direct cross-origin call to `:8080` would be blocked - leave `VITE_API_URL` unset (default `/api`).
 
 ## Project Structure
 
