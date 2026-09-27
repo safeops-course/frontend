@@ -51,7 +51,10 @@ const getConfig = () => {
   const uptraceDsn = window.__ENV__?.VITE_UPTRACE_DSN || import.meta.env.VITE_UPTRACE_DSN || ''
   const apiUrl = window.__ENV__?.VITE_API_URL || import.meta.env.VITE_API_URL || window.location.origin
 
-  let collectorUrl = window.__ENV__?.VITE_OTEL_COLLECTOR_URL || import.meta.env.VITE_OTEL_COLLECTOR_URL || 'http://localhost:4318/v1/traces'
+  // No default collector: a fallback to http://localhost:4318 made every visitor's browser send
+  // requests to a port on the visitor's own machine. Without a DSN or an explicit collector URL,
+  // spans are created (trace context still reaches the backend) but not exported.
+  let collectorUrl = window.__ENV__?.VITE_OTEL_COLLECTOR_URL || import.meta.env.VITE_OTEL_COLLECTOR_URL || ''
   let headers = {}
 
   // If Uptrace DSN is set, use Uptrace directly
@@ -97,22 +100,29 @@ export function initTelemetry() {
   }
   const resource = resourceFromAttributes(resourceAttrs)
 
-  // Configure OTLP HTTP exporter
-  const exporter = new OTLPTraceExporter({
-    url: config.collectorUrl,
-    headers: config.headers,
-  })
-
-  // Create tracer provider with span processor (v2.x API)
-  const provider = new WebTracerProvider({
-    resource,
-    spanProcessors: [
+  // Export only to a configured destination (Uptrace DSN or VITE_OTEL_COLLECTOR_URL). The CSP in
+  // nginx/security-headers.conf allows connect-src to 'self' and https://api.uptrace.dev only.
+  const spanProcessors = []
+  if (config.collectorUrl) {
+    const exporter = new OTLPTraceExporter({
+      url: config.collectorUrl,
+      headers: config.headers,
+    })
+    spanProcessors.push(
       new BatchSpanProcessor(exporter, {
         maxQueueSize: 100,
         maxExportBatchSize: 10,
         scheduledDelayMillis: 500,
       }),
-    ],
+    )
+  } else {
+    console.log('[Telemetry] No Uptrace DSN or collector URL configured: spans are not exported')
+  }
+
+  // Create tracer provider (v2.x API)
+  const provider = new WebTracerProvider({
+    resource,
+    spanProcessors,
   })
 
   // Register with ZoneContextManager for async context propagation
