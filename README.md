@@ -64,7 +64,13 @@ Image tags are automatically updated by Flux ImageUpdateAutomation.
 - SPA routing: all routes fall back to `index.html`
 - `/config.js` served from `/tmp/config.js` (runtime-generated, no-cache)
 - `/health` returns 200 for container health checks
-- Security headers: X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy
+- `/api/` proxies **only** the backend routes the SPA calls (regex in `nginx/default.conf`); every other
+  `/api/...` path is a 404 from nginx, so a new or debug backend route is not public by accident.
+  Adding a route there makes it public - review it first. Same origin, so no CORS headers.
+- Security headers on every response (`nginx/security-headers.conf`, included in the server block and in
+  every location, because a location with its own `add_header` inherits none): Content-Security-Policy
+  (`script-src 'self'`, no inline scripts; `connect-src` self + Uptrace), X-Frame-Options DENY,
+  X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin, Permissions-Policy
 - Static assets cached for 1 year with immutable flag
 - Gzip compression enabled
 
@@ -77,7 +83,11 @@ The production build uses a multi-stage Dockerfile:
 
 ```bash
 docker build -t frontend:local .
-docker run -p 8080:8080 -e VITE_API_URL=http://localhost:8080 frontend:local
+# nginx resolves "backend" (proxy_pass http://backend:80, the cluster Service) at startup and exits
+# with "host not found in upstream" if it cannot - so run a backend on the same network:
+docker network create sre-local
+docker run -d --name backend --network sre-local -e PORT=80 -e JWT_SECRET="$(openssl rand -hex 32)" ghcr.io/safeops-course/backend:<tag>
+docker run --rm --network sre-local -p 8080:8080 frontend:local
 ```
 
 ## Local Development
@@ -89,11 +99,9 @@ npm run build     # production build to dist/
 npm run preview   # preview production build
 ```
 
-Create a `.env` file for local dev:
-
-```env
-VITE_API_URL=http://localhost:8080
-```
+The browser calls `/api` on its own origin; the Vite dev server proxies it to the backend
+(`http://localhost:8080`, or `BACKEND_URL=... npm run dev`). The backend sends no CORS headers,
+so a direct cross-origin call to `:8080` would be blocked - leave `VITE_API_URL` unset (default `/api`).
 
 ## Project Structure
 
