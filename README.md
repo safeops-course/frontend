@@ -39,8 +39,9 @@ The app uses `window.__ENV__` for runtime config, injected by an nginx entrypoin
 
 `VITE_OTEL_COLLECTOR_URL` (an OTLP/HTTP traces endpoint) is **not** a runtime setting of the image:
 the entrypoint does not write it to `config.js`. Set it at build time or for `npm run dev`. In the
-nginx image the CSP allows `connect-src` only to `'self'` and `https://api.uptrace.dev`, so a
-collector on another origin is blocked there; use `VITE_UPTRACE_DSN` in deployed environments.
+nginx image the CSP allows `connect-src` only to `'self'` and `https://api.uptrace.dev`; the built
+app accepts a collector URL only on those origins (a same-origin path works) and otherwise logs a
+warning and exports nothing. Use `VITE_UPTRACE_DSN` in deployed environments.
 
 Fallback chain: `window.__ENV__` → `import.meta.env` → defaults (API `/api`, same origin; no trace export without `VITE_UPTRACE_DSN` or `VITE_OTEL_COLLECTOR_URL`).
 

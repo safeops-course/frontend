@@ -45,6 +45,32 @@ function buildTraceHeaderCorsUrls(apiUrl) {
   return rules
 }
 
+// The only collector origins the image's CSP allows (nginx/security-headers.conf, connect-src):
+// the page's own origin and Uptrace. Keep both lists in sync. `npm run dev` has no CSP.
+const UPTRACE_ORIGIN = 'https://api.uptrace.dev'
+
+// Returns the collector URL if the built app may send to it, or '' (with a warning) if the CSP
+// would block it - better to say so once than to lose every span silently.
+function allowedCollectorUrl(url) {
+  if (!url || !import.meta.env.PROD) {
+    return url
+  }
+  let origin
+  try {
+    origin = new URL(url, window.location.origin).origin
+  } catch {
+    console.warn('[Telemetry] Invalid collector URL, spans are not exported:', url)
+    return ''
+  }
+  if (origin === window.location.origin || origin === UPTRACE_ORIGIN) {
+    return url
+  }
+  console.warn(
+    `[Telemetry] Collector origin ${origin} is not allowed by the CSP (connect-src 'self' ${UPTRACE_ORIGIN}); spans are not exported`,
+  )
+  return ''
+}
+
 // Get configuration from environment
 const getConfig = () => {
   // Uptrace DSN format: https://TOKEN@api.uptrace.dev
@@ -59,13 +85,15 @@ const getConfig = () => {
 
   // If Uptrace DSN is set, use Uptrace directly
   if (uptraceDsn) {
-    collectorUrl = 'https://api.uptrace.dev/v1/traces'
+    collectorUrl = `${UPTRACE_ORIGIN}/v1/traces`
     // Extract token from DSN (format: https://TOKEN@api.uptrace.dev)
     const match = uptraceDsn.match(/https:\/\/([^@]+)@/)
     if (match) {
       headers['uptrace-dsn'] = uptraceDsn
     }
   }
+
+  collectorUrl = allowedCollectorUrl(collectorUrl)
 
   return {
     serviceName: 'frontend',
