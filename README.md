@@ -22,7 +22,7 @@ SRE Control Plane Dashboard, part of the [SafeOps Academy](https://safeops.work/
 - **Axios** HTTP client
 - **ApexCharts** (vue3-apexcharts) dashboard charts
 - **OpenTelemetry** browser SDK for distributed tracing
-- **nginx 1.28-alpine** production serving
+- **nginx 1.30-alpine** production serving
 
 ## Runtime Configuration
 
@@ -43,7 +43,8 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 
 Two GitHub Actions workflows:
 
-- **build.yml** — triggers on push to `main`/`develop`: builds multi-platform Docker image (linux/amd64 + linux/arm64), pushes to GHCR, signs with cosign (keyless), generates SBOM attestation (SPDX), runs Trivy vulnerability scan (non-blocking)
+- **build.yml** — triggers on push to `main`/`develop`: builds multi-platform Docker image (linux/amd64 + linux/arm64), pushes to GHCR, signs with cosign (keyless), generates SBOM attestation (SPDX), after a blocking Trivy scan of the linux/amd64 and linux/arm64 images that runs **before** the push
+- **pr.yml** — every pull request: npm ci/build, `npm audit` (high, production deps), docker build + `nginx -t`, gitleaks on the PR commits
 - **promote-production.yml** — manual trigger: runs Trivy scan (blocking on CRITICAL), re-tags staging image as production, creates GitHub Release, bumps version tag
 
 Images are pushed to `ghcr.io/safeops-course/frontend` with tags like `develop-v0.0.1-abc1234-1234567890`.
@@ -79,7 +80,7 @@ Image tags are automatically updated by Flux ImageUpdateAutomation.
 The production build uses a multi-stage Dockerfile:
 
 1. **Builder stage** — `node:24-alpine`, `npm ci`, `npm run build`
-2. **Runtime stage** — `nginx:1.28-alpine`, non-root user (uid 10001), read-only root filesystem
+2. **Runtime stage** — `nginx:1.30-alpine`, non-root user (uid 10001), read-only root filesystem
 
 ```bash
 docker build -t frontend:local .
