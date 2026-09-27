@@ -134,7 +134,7 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 ## CI/CD
 
 - **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; gitleaks v8.30.1 on the PR commits
-- **build.yml** — on push to main/develop: build the linux/amd64 image locally and **Trivy-scan it before anything is pushed** (blocking on fixable CRITICAL/HIGH), then build multi-platform (amd64+arm64), push to GHCR, cosign sign + SBOM attestation
+- **build.yml** — on push to main/develop: build each published platform (linux/amd64, linux/arm64) locally and **Trivy-scan it before anything is pushed** (blocking on fixable CRITICAL/HIGH), then build multi-platform (amd64+arm64), push to GHCR, cosign sign + SBOM attestation
 - **promote-production.yml** — manual: Trivy gate (blocking, CRITICAL only), re-tag staging image as production, create GitHub Release, bump version tag
 
 ## Coding Guidelines

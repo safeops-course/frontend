@@ -43,7 +43,7 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 
 Two GitHub Actions workflows:
 
-- **build.yml** — triggers on push to `main`/`develop`: builds multi-platform Docker image (linux/amd64 + linux/arm64), pushes to GHCR, signs with cosign (keyless), generates SBOM attestation (SPDX), after a blocking Trivy scan of the linux/amd64 image that runs **before** the push
+- **build.yml** — triggers on push to `main`/`develop`: builds multi-platform Docker image (linux/amd64 + linux/arm64), pushes to GHCR, signs with cosign (keyless), generates SBOM attestation (SPDX), after a blocking Trivy scan of the linux/amd64 and linux/arm64 images that runs **before** the push
 - **pr.yml** — every pull request: npm ci/build, `npm audit` (high, production deps), docker build + `nginx -t`, gitleaks on the PR commits
 - **promote-production.yml** — manual trigger: runs Trivy scan (blocking on CRITICAL), re-tags staging image as production, creates GitHub Release, bumps version tag
 
