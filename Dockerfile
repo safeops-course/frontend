@@ -75,6 +75,14 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG BUILD_DATE=unknown
+ARG APP_VERSION=dev
+
+# What the runtime config (config.js) reports and telemetry sends as service.version: the image's own
+# full tag (APP_VERSION, e.g. staging-v0.0.0-<sha>-<ts>) - the same thing the backend's /version says.
+# An env from the Deployment still overrides them.
+ENV VERSION=${APP_VERSION} \
+    COMMIT=${COMMIT} \
+    BUILD_DATE=${BUILD_DATE}
 
 # Labels for metadata
 LABEL org.opencontainers.image.title="SRE Frontend" \

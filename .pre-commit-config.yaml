@@ -1,0 +1,39 @@
+# The checks CI runs on every pull request (.github/workflows/pr.yml), on your machine first - so a
+# failure shows up before the push, not minutes later on GitHub.
+#   pre-commit (every commit, fast): gitleaks on the staged changes, no commit to main
+#   pre-push   (before a push):      npm run build, npm audit (high and above, production deps)
+# Not repeated here: the docker build + nginx -t of pr.yml (needs Docker and takes minutes).
+# Install once per clone: pre-commit install   (needs pre-commit, Node and npm ci done once).
+# The gitleaks version must match GITLEAKS_VERSION in pr.yml - change them together.
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: [--branch, main]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1 # = GITLEAKS_VERSION in pr.yml
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: npm-build
+        name: npm run build
+        entry: npm run build
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+
+      - id: npm-audit
+        name: npm audit (high, production deps)
+        entry: npm audit --audit-level=high --omit=dev
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
