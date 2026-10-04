@@ -60,8 +60,10 @@ trace runs from the click through the backend to its database queries.
   `http.url`, `http.request.method`, `http.response.status_code`, `app.error.detail` (the backend's
   `{"error": ...}`).
 - axios interceptor (`src/services/api.js`): on a response error, the same on `trace.getActiveSpan()`.
-  Network errors and 5xx from the probe endpoints above are not reported, so a backend restart does not
-  flood Uptrace.
+  For the probe and metrics endpoints the interceptor stays silent on network errors and 5xx. That is
+  the interceptor only: the dashboard's health checks catch their own failures (`ui.dashboard.fetch_health`
+  records no exception), but a failed metrics poll throws inside `withSpan`, so
+  `ui.dashboard.fetch_metrics` records one exception per poll - every 5 seconds while the tab is visible.
 
 ## UI spans
 
@@ -84,4 +86,5 @@ Build time (Vite, baked into the bundle): `VITE_OTEL_COLLECTOR_URL`.
 2. An action in the UI (a test request in the API Explorer) appears in Uptrace as a `ui.*` span, with
    the backend's `GET ...` span and its database spans in the same trace.
 3. A backend error shows `http.url`, `http.response.status_code` and `app.error.detail` on the span.
-4. With the backend down, the health and metrics polling does not flood Uptrace with exceptions.
+4. With the backend down, `ui.dashboard.fetch_health` spans carry no exception (the checks catch their
+   failures), while each failed metrics poll adds an exception to a `ui.dashboard.fetch_metrics` span.
