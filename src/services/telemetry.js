@@ -128,7 +128,7 @@ export function initTelemetry() {
   const resourceAttrs = {
     [ATTR_SERVICE_NAME]: config.serviceName,
     [ATTR_SERVICE_VERSION]: config.serviceVersion,
-    'deployment.environment': config.environment,
+    'deployment.environment.name': config.environment, // same attribute as the backend (semconv)
   }
   if (config.clusterName) {
     resourceAttrs['k8s.cluster.name'] = config.clusterName

@@ -125,6 +125,7 @@ Dockerfile                   # Multi-stage: node builder → nginx runtime
 ```bash
 npm install             # install dependencies
 npm run dev             # vite dev server
+pre-commit install      # once per clone: the CI checks as pre-commit/pre-push hooks (.pre-commit-config.yaml)
 npm run build           # production build to dist/
 npm run preview         # preview production build
 ```
@@ -158,6 +159,10 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 - Static assets cached for 1 year with immutable flag
 
 ## CI/CD
+
+The same checks run locally first: `.pre-commit-config.yaml` (gitleaks and no commit to main on commit;
+`npm run build` and `npm audit` on push), gitleaks pinned to the version in pr.yml - change them together.
+Run them before pushing; do not leave a build or audit failure for CI to find.
 
 - **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; gitleaks v8.30.1 on the PR commits
 - **build.yml** — on push to main/develop: build each published platform (linux/amd64, linux/arm64) locally and **Trivy-scan it before anything is pushed** (blocking on fixable CRITICAL/HIGH), then push exactly those scanned images and join them into one multi-platform index (`docker buildx imagetools create`, no second build), cosign sign + SBOM attestation on the index digest + SLSA build provenance (`actions/attest-build-provenance`, verify with `gh attestation verify`)
