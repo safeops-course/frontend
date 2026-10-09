@@ -76,21 +76,25 @@ jobs:
           opts=(--read-only --add-host backend:127.0.0.1 -p 18080:8080
                 --tmpfs /tmp:uid=10001,gid=10001 --tmpfs /var/cache/nginx:uid=10001,gid=10001
                 --tmpfs /var/run:uid=10001,gid=10001)
-          errors() {  # errors <path>: how many of 100 requests answered 500
+          count() {  # count <path> <code>: how many of 100 requests answered <code>
             local n=0
             for _ in $(seq 1 100); do
-              [[ "$(curl -s -o /dev/null -w '%{http_code}' "localhost:18080$1")" == 500 ]] && n=$((n + 1))
+              [[ "$(curl -s -o /dev/null -w '%{http_code}' "localhost:18080$1")" == "$2" ]] && n=$((n + 1))
             done
             echo "${n}"
           }
-          check() {  # check <rate> <min> <max>: 500s on / within [min, max], none on /health
+          check() {  # check <rate> <min> <max>: 500s on / within [min, max]; /health always 200
             docker run -d --name fault "${opts[@]}" ${1:+-e RANDOM_ERROR_RATE=$1} frontend:pr-check >/dev/null
-            for _ in $(seq 1 30); do curl -sf -o /dev/null localhost:18080/health && break; sleep 1; done
-            local root health
-            root="$(errors /)"; health="$(errors /health)"
+            local up=no
+            for _ in $(seq 1 30); do curl -sf -o /dev/null localhost:18080/health && { up=yes; break; }; sleep 1; done
+            if [[ "${up}" != yes ]]; then
+              echo "::error::RANDOM_ERROR_RATE='$1': /health never answered 200"; docker logs fault; docker rm -f fault >/dev/null; exit 1
+            fi
+            local errors health_ok
+            errors="$(count / 500)"; health_ok="$(count /health 200)"
             docker rm -f fault >/dev/null
-            echo "RANDOM_ERROR_RATE='$1': / ${root}/100 errors, /health ${health}/100"
-            (( root >= $2 && root <= $3 && health == 0 )) || { echo "::error::RANDOM_ERROR_RATE='$1': want $2-$3 errors on / and none on /health"; exit 1; }
+            echo "RANDOM_ERROR_RATE='$1': / ${errors}/100 errors, /health ${health_ok}/100 OK"
+            (( errors >= $2 && errors <= $3 && health_ok == 100 )) || { echo "::error::RANDOM_ERROR_RATE='$1': want $2-$3 errors on / and /health 200 every time"; exit 1; }
           }
           check "" 0 0
           check 0 0 0

@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck shell=busybox  # the nginx alpine image: busybox ash (pipefail is supported)
 # 50-fault-injection.sh - RANDOM_ERROR_RATE for the frontend, the same knob the backend has.
 #
 # The progressive-delivery lab (Chapter 19) needs a frontend release that fails for some of its
@@ -14,7 +15,7 @@
 # Writes /tmp/nginx-fault.conf (the root filesystem is read-only in the cluster; /tmp is an
 # emptyDir), which nginx.conf includes in its http block. Exits non-zero on an invalid value, and the
 # entrypoint then stops the container: a typo must not silently mean "no errors".
-set -eu
+set -euo pipefail
 
 rate="${RANDOM_ERROR_RATE:-0}"
 
