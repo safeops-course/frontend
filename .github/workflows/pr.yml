@@ -68,6 +68,45 @@ jobs:
       - name: nginx config test
         run: docker run --rm --add-host backend:127.0.0.1 frontend:pr-check nginx -t
 
+      # RANDOM_ERROR_RATE (nginx/50-fault-injection.sh): run as in the cluster - read-only root,
+      # writable tmpfs owned by the image's user - and count 100 answers per case.
+      - name: RANDOM_ERROR_RATE - off, all, a share; /health spared; invalid values refused
+        run: |
+          set -euo pipefail
+          opts=(--read-only --add-host backend:127.0.0.1 -p 18080:8080
+                --tmpfs /tmp:uid=10001,gid=10001 --tmpfs /var/cache/nginx:uid=10001,gid=10001
+                --tmpfs /var/run:uid=10001,gid=10001)
+          count() {  # count <path> <code>: how many of 100 requests answered <code>
+            local n=0
+            for _ in $(seq 1 100); do
+              [[ "$(curl -s -o /dev/null -w '%{http_code}' "localhost:18080$1")" == "$2" ]] && n=$((n + 1))
+            done
+            echo "${n}"
+          }
+          check() {  # check <rate> <min> <max>: 500s on / within [min, max]; /health always 200
+            docker run -d --name fault "${opts[@]}" ${1:+-e RANDOM_ERROR_RATE=$1} frontend:pr-check >/dev/null
+            local up=no
+            for _ in $(seq 1 30); do curl -sf -o /dev/null localhost:18080/health && { up=yes; break; }; sleep 1; done
+            if [[ "${up}" != yes ]]; then
+              echo "::error::RANDOM_ERROR_RATE='$1': /health never answered 200"; docker logs fault; docker rm -f fault >/dev/null; exit 1
+            fi
+            local errors health_ok
+            errors="$(count / 500)"; health_ok="$(count /health 200)"
+            docker rm -f fault >/dev/null
+            echo "RANDOM_ERROR_RATE='$1': / ${errors}/100 errors, /health ${health_ok}/100 OK"
+            (( errors >= $2 && errors <= $3 && health_ok == 100 )) || { echo "::error::RANDOM_ERROR_RATE='$1': want $2-$3 errors on / and /health 200 every time"; exit 1; }
+          }
+          check "" 0 0
+          check 0 0 0
+          check 1 100 100
+          check 0.3 10 50
+          for bad in abc 1.5 -0.1 '30%'; do
+            if docker run --rm "${opts[@]}" -e RANDOM_ERROR_RATE="${bad}" frontend:pr-check nginx -t >/dev/null 2>&1; then
+              echo "::error::RANDOM_ERROR_RATE='${bad}' was accepted"; exit 1
+            fi
+            echo "RANDOM_ERROR_RATE='${bad}': refused"
+          done
+
   secrets:
     name: secrets (gitleaks)
     runs-on: ubuntu-latest

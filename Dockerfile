@@ -32,6 +32,8 @@ RUN apk upgrade --no-cache && apk add --no-cache curl
 COPY nginx/nginx.conf /etc/nginx/nginx.conf
 COPY nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
+# RANDOM_ERROR_RATE -> /tmp/nginx-fault.conf at every start (fault injection, Chapter 19)
+COPY --chmod=0755 nginx/50-fault-injection.sh /docker-entrypoint.d/50-fault-injection.sh
 
 # Copy built assets from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
@@ -68,8 +70,9 @@ USER appuser
 EXPOSE 8080
 
 # Health check
+# /health, like the Kubernetes probes: with RANDOM_ERROR_RATE set, / answers 500 on purpose.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080/ || exit 1
+  CMD curl -f http://localhost:8080/health || exit 1
 
 # Re-declare build args for this stage (ARGs don't cross stage boundaries)
 ARG VERSION=dev
