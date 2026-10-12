@@ -23,7 +23,7 @@ ARG BUILD_DATE=unknown
 RUN npm run build
 
 # Stage 2: Serve with nginx
-FROM nginx:1.30-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 # Patch OS-level vulnerabilities and install curl for health checks
 RUN apk upgrade --no-cache && apk add --no-cache curl

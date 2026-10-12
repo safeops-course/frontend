@@ -39,7 +39,7 @@ reviews:
         Put theme changes here with @theme, not in tailwind.config.js (v4 ignores it unless @config is used).
     - path: "Dockerfile"
       instructions: |
-        - Multi-stage: node:24-alpine builder (npm ci + vite build), nginx:1.28-alpine runtime.
+        - Multi-stage: node:24-alpine builder (npm ci + vite build), nginx:1.31-alpine runtime.
         - Runtime must stay non-root: appuser uid 10001 (group 10001). The Deployment in safeops-course/sre
           sets runAsUser 10001 and readOnlyRootFilesystem; only /tmp, /var/cache/nginx and /var/run are writable.
         - /docker-entrypoint.d/40-generate-env-config.sh writes window.__ENV__ to /tmp/config.js at start.
