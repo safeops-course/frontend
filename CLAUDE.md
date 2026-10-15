@@ -140,6 +140,7 @@ The app uses `window.__ENV__` for runtime config, injected by nginx entrypoint s
 | `VITE_UPTRACE_DSN` | Uptrace DSN for browser tracing |
 | `ENVIRONMENT` | Current environment name |
 | `RANDOM_ERROR_RATE` | nginx, not the SPA: probability 0-1 that a request answers 500 (`/health` spared) - fault injection for the canary lab (Chapter 19); unset = off, an invalid value stops the start (`nginx/50-fault-injection.sh`). Never set in production |
+| `BACKEND_HOST` / `BACKEND_PORT` | nginx, not the SPA: where `/api/` goes (default `backend`:`80`). A short name gets the pod's Kubernetes search domain (`backend.<namespace>.svc.cluster.local`); resolved per request (`nginx/45-backend-upstream.sh`) |
 | `VERSION` | App version |
 | `COMMIT` | Git commit SHA |
 | `BUILD_DATE` | Build timestamp |
@@ -153,6 +154,12 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 - `/config.js` served from `/tmp/config.js` (runtime-generated) with no-cache headers
 - `/health` endpoint returns 200 for container health checks
 - `/api/` proxies only an allowlist of backend routes (regex location); other `/api/...` paths are 404
+- The backend is resolved **per request** (`resolver` + `$backend_upstream`, both written to `/tmp/nginx-backend.conf`
+  at start by `nginx/45-backend-upstream.sh` from the pod's `/etc/resolv.conf`): nginx starts without a backend and
+  `/api/` answers 502 until it exists. A fixed `proxy_pass http://backend:80` resolved once at start and crash-looped
+  the pod when DNS was not there yet (GKE, 2026-10-15)
+- A clean start log: no `user` directive (nginx runs as appuser already) and no `10-listen-on-ipv6-by-default.sh`
+  (it cannot edit the read-only `default.conf`); pr.yml fails on any `[warn]`/`[emerg]` at start
 - Security headers (CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy) live in
   `nginx/security-headers.conf` and are included in EVERY location (nginx does not inherit add_header
   into a location that has its own). No inline scripts in index.html (CSP `script-src 'self'`).
