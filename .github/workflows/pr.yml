@@ -94,17 +94,22 @@ jobs:
           docker rm -f web backend >/dev/null; docker network rm lazy >/dev/null
           echo "without a backend: 502; with it: ${code}"
           if grep -E '\[(warn|emerg)\]|can not modify' <<<"${logs}"; then echo "::error::warnings at start"; exit 1; fi
-          # BACKEND_HOST / BACKEND_PORT go into nginx's configuration: anything but a DNS name and a port
-          # number is refused at start.
-          nl=$'\n'
-          for bad in 'BACKEND_HOST=back;end' 'BACKEND_HOST=a b' "BACKEND_HOST=backend${nl}};" 'BACKEND_HOST=-x' \
-                     'BACKEND_PORT=80}' "BACKEND_PORT=80${nl}1" 'BACKEND_PORT=0' 'BACKEND_PORT=99999' 'BACKEND_PORT=000080'; do
-            if docker run --rm -e "${bad}" frontend:pr-check nginx -t >/dev/null 2>&1; then
-              echo "::error::${bad} was accepted"; exit 1
-            fi
-            printf '%q: refused\n' "${bad}"   # %q shows a newline as $'\n'
-
-          done
+          # Kubernetes service links: every pod started after the Service "backend" exists gets
+          # BACKEND_PORT=tcp://<ip>:80 and friends. They must not change or stop the start.
+          # BACKEND_HOST is not a service link: it was this image's old knob, set so it cannot return unnoticed.
+          links=(-e BACKEND_PORT=tcp://10.96.0.10:80 -e BACKEND_PORT_80_TCP=tcp://10.96.0.10:80
+                 -e BACKEND_SERVICE_HOST=10.96.0.10 -e BACKEND_SERVICE_PORT=80 -e BACKEND_HOST=10.96.0.10)
+          docker run -d --name links "${opts[@]}" "${links[@]}" frontend:pr-check >/dev/null
+          up=no
+          for _ in $(seq 1 30); do docker exec links curl -sf -o /dev/null localhost:8080/health && { up=yes; break; }; sleep 1; done
+          conf="$(docker exec links cat /tmp/nginx-backend.conf 2>/dev/null || true)"
+          links_log="$(docker logs links 2>&1)"
+          docker rm -f links >/dev/null
+          [[ "${up}" == yes ]] || { echo "::error::no start with Kubernetes service-link variables"; echo "${links_log}"; exit 1; }
+          if grep -E '\[(warn|emerg)\]|can not modify' <<<"${links_log}"; then echo "::error::warnings at start with service-link variables"; exit 1; fi
+          grep -q 'default "backend:80";' <<<"${conf}" \
+            || { echo "::error::service-link variables changed the upstream:"; echo "${conf}"; exit 1; }
+          echo "service-link variables: ignored, upstream backend:80"
 
       # RANDOM_ERROR_RATE (nginx/50-fault-injection.sh): run as in the cluster - read-only root,
       # writable tmpfs owned by the image's user - and count 100 answers per case.

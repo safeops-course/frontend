@@ -87,12 +87,12 @@ Image tags are automatically updated by Flux ImageUpdateAutomation.
 The production build uses a multi-stage Dockerfile:
 
 1. **Builder stage** — `node:24-alpine`, `npm ci`, `npm run build`
-2. **Runtime stage** — `nginx:1.30-alpine`, non-root user (uid 10001), read-only root filesystem
+2. **Runtime stage** — `nginx:1.31-alpine`, non-root user (uid 10001), read-only root filesystem
 
 ```bash
 docker build -t frontend:local .
-# nginx resolves "backend" (proxy_pass http://backend:80, the cluster Service) at startup and exits
-# with "host not found in upstream" if it cannot - so run a backend on the same network:
+# /api/ always goes to "backend:80", resolved per request (nginx/45-backend-upstream.sh): nginx starts
+# without it and /api/ answers 502 until a backend named "backend" runs on the same network:
 docker network create sre-local
 docker run -d --name backend --network sre-local -e PORT=80 -e JWT_SECRET="$(openssl rand -hex 32)" ghcr.io/safeops-course/backend:<tag>
 docker run --rm --network sre-local -p 8080:8080 frontend:local
