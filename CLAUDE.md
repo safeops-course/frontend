@@ -105,6 +105,9 @@ src/
 nginx/
   nginx.conf                # Main nginx config
   default.conf              # Server block (SPA routing, /config.js, /health)
+  security-headers.conf     # Included in every location
+  45-backend-upstream.sh    # Entrypoint: resolver + backend name -> /tmp/nginx-backend.conf
+  50-fault-injection.sh     # Entrypoint: RANDOM_ERROR_RATE -> /tmp/nginx-fault.conf
 Dockerfile                   # Multi-stage: node builder → nginx runtime
 ```
 
@@ -118,7 +121,7 @@ Dockerfile                   # Multi-stage: node builder → nginx runtime
 - **Axios** for HTTP client
 - **ApexCharts** (vue3-apexcharts) for dashboard charts
 - **OpenTelemetry** browser SDK for distributed tracing
-- **nginx 1.30-alpine** (current stable) for production serving
+- **nginx 1.31-alpine** for production serving
 
 ## Build & Run
 
@@ -172,7 +175,7 @@ The same checks run locally first: `.pre-commit-config.yaml` (gitleaks and no co
 `npm run build` and `npm audit` on push), gitleaks pinned to the version in pr.yml - change them together.
 Run them before pushing; do not leave a build or audit failure for CI to find.
 
-- **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; gitleaks v8.30.1 on the PR commits
+- **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; the image run as in the cluster (read-only root): starts without a backend (`/health` 200, `/api/healthz` 502), reaches one once it starts, no `[warn]`/`[emerg]` in the start log; RANDOM_ERROR_RATE cases; gitleaks v8.30.1 on the PR commits
 - **build.yml** — on push to main/develop: build each published platform (linux/amd64, linux/arm64) locally and **Trivy-scan it before anything is pushed** (blocking on fixable CRITICAL/HIGH), then push exactly those scanned images and join them into one multi-platform index (`docker buildx imagetools create`, no second build), cosign sign + SBOM attestation on the index digest + SLSA build provenance (`actions/attest-build-provenance`, verify with `gh attestation verify`)
 - **promote-production.yml** — manual: Trivy gate (blocking, CRITICAL only), re-tag staging image as production, create GitHub Release, bump version tag
 

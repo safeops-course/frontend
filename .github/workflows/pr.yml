@@ -94,6 +94,14 @@ jobs:
           docker rm -f web backend >/dev/null; docker network rm lazy >/dev/null
           echo "without a backend: 502; with it: ${code}"
           if grep -E '\[(warn|emerg)\]|can not modify' <<<"${logs}"; then echo "::error::warnings at start"; exit 1; fi
+          # BACKEND_HOST / BACKEND_PORT go into nginx's configuration: anything but a DNS name and a port
+          # number is refused at start.
+          for bad in 'BACKEND_HOST=back;end' 'BACKEND_HOST=a b' 'BACKEND_PORT=80}' 'BACKEND_PORT=0' 'BACKEND_PORT=99999'; do
+            if docker run --rm -e "${bad}" frontend:pr-check nginx -t >/dev/null 2>&1; then
+              echo "::error::${bad} was accepted"; exit 1
+            fi
+            echo "${bad}: refused"
+          done
 
       # RANDOM_ERROR_RATE (nginx/50-fault-injection.sh): run as in the cluster - read-only root,
       # writable tmpfs owned by the image's user - and count 100 answers per case.

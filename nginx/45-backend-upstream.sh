@@ -25,6 +25,17 @@ set -euo pipefail
 host="${BACKEND_HOST:-backend}"
 port="${BACKEND_PORT:-80}"
 
+# Both values are written into nginx's configuration: only a DNS name and a port number, so nothing
+# else (a ";", a "}", a space) can change it. A wrong value stops the start with a clear message.
+if ! printf '%s' "${host}" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'; then
+  echo "45-backend-upstream.sh: BACKEND_HOST='${host}' is not a DNS name (letters, digits, '.', '-')" >&2
+  exit 1
+fi
+if ! printf '%s' "${port}" | grep -Eq '^[0-9]{1,5}$' || [ "${port}" -lt 1 ] || [ "${port}" -gt 65535 ]; then
+  echo "45-backend-upstream.sh: BACKEND_PORT='${port}' is not a port number (1-65535)" >&2
+  exit 1
+fi
+
 # All nameservers, space-separated; an IPv6 address needs brackets in nginx's resolver.
 nameservers="$(awk '$1 == "nameserver" { a = $2; if (index(a, ":")) a = "[" a "]"; printf "%s ", a }' /etc/resolv.conf)"
 if [ -z "${nameservers}" ]; then
