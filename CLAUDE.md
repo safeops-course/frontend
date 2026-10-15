@@ -105,6 +105,9 @@ src/
 nginx/
   nginx.conf                # Main nginx config
   default.conf              # Server block (SPA routing, /config.js, /health)
+  security-headers.conf     # Included in every location
+  45-backend-upstream.sh    # Entrypoint: resolver + backend name -> /tmp/nginx-backend.conf
+  50-fault-injection.sh     # Entrypoint: RANDOM_ERROR_RATE -> /tmp/nginx-fault.conf
 Dockerfile                   # Multi-stage: node builder → nginx runtime
 ```
 
@@ -118,7 +121,7 @@ Dockerfile                   # Multi-stage: node builder → nginx runtime
 - **Axios** for HTTP client
 - **ApexCharts** (vue3-apexcharts) for dashboard charts
 - **OpenTelemetry** browser SDK for distributed tracing
-- **nginx 1.30-alpine** (current stable) for production serving
+- **nginx 1.31-alpine** for production serving
 
 ## Build & Run
 
@@ -140,6 +143,7 @@ The app uses `window.__ENV__` for runtime config, injected by nginx entrypoint s
 | `VITE_UPTRACE_DSN` | Uptrace DSN for browser tracing |
 | `ENVIRONMENT` | Current environment name |
 | `RANDOM_ERROR_RATE` | nginx, not the SPA: probability 0-1 that a request answers 500 (`/health` spared) - fault injection for the canary lab (Chapter 19); unset = off, an invalid value stops the start (`nginx/50-fault-injection.sh`). Never set in production |
+| `BACKEND_HOST` / `BACKEND_PORT` | nginx, not the SPA: where `/api/` goes (default `backend`:`80`). A short name gets the pod's Kubernetes search domain (`backend.<namespace>.svc.cluster.local`); resolved per request (`nginx/45-backend-upstream.sh`) |
 | `VERSION` | App version |
 | `COMMIT` | Git commit SHA |
 | `BUILD_DATE` | Build timestamp |
@@ -153,6 +157,12 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 - `/config.js` served from `/tmp/config.js` (runtime-generated) with no-cache headers
 - `/health` endpoint returns 200 for container health checks
 - `/api/` proxies only an allowlist of backend routes (regex location); other `/api/...` paths are 404
+- The backend is resolved **per request** (`resolver` + `$backend_upstream`, both written to `/tmp/nginx-backend.conf`
+  at start by `nginx/45-backend-upstream.sh` from the pod's `/etc/resolv.conf`): nginx starts without a backend and
+  `/api/` answers 502 until it exists. A fixed `proxy_pass http://backend:80` resolved once at start and crash-looped
+  the pod when DNS was not there yet (GKE, 2026-10-15)
+- A clean start log: no `user` directive (nginx runs as appuser already) and no `10-listen-on-ipv6-by-default.sh`
+  (it cannot edit the read-only `default.conf`); pr.yml fails on any `[warn]`/`[emerg]` at start
 - Security headers (CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy) live in
   `nginx/security-headers.conf` and are included in EVERY location (nginx does not inherit add_header
   into a location that has its own). No inline scripts in index.html (CSP `script-src 'self'`).
@@ -165,7 +175,7 @@ The same checks run locally first: `.pre-commit-config.yaml` (gitleaks and no co
 `npm run build` and `npm audit` on push), gitleaks pinned to the version in pr.yml - change them together.
 Run them before pushing; do not leave a build or audit failure for CI to find.
 
-- **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; gitleaks v8.30.1 on the PR commits
+- **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; the image run as in the cluster (read-only root): starts without a backend (`/health` 200, `/api/healthz` 502), reaches one once it starts, no `[warn]`/`[emerg]` in the start log; RANDOM_ERROR_RATE cases; gitleaks v8.30.1 on the PR commits
 - **build.yml** — on push to main/develop: build each published platform (linux/amd64, linux/arm64) locally and **Trivy-scan it before anything is pushed** (blocking on fixable CRITICAL/HIGH), then push exactly those scanned images and join them into one multi-platform index (`docker buildx imagetools create`, no second build), cosign sign + SBOM attestation on the index digest + SLSA build provenance (`actions/attest-build-provenance`, verify with `gh attestation verify`)
 - **promote-production.yml** — manual: Trivy gate (blocking, CRITICAL only), re-tag staging image as production, create GitHub Release, bump version tag
 

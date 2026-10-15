@@ -64,16 +64,54 @@ jobs:
           platforms: linux/amd64
           cache-from: type=gha
 
-      # nginx resolves the proxy upstream "backend" at startup; in the cluster that is the Service.
+      # The entrypoint scripts run first (they write /tmp/nginx-*.conf), then nginx -t.
       - name: nginx config test
-        run: docker run --rm --add-host backend:127.0.0.1 frontend:pr-check nginx -t
+        run: docker run --rm frontend:pr-check nginx -t
+
+      # nginx resolves the backend per request (nginx/45-backend-upstream.sh): it must start without
+      # one - /health 200, /api/ 502 - with a clean log (no warn/emerg/"can not modify"), and reach one
+      # once it is there. Run as in the cluster: read-only root, tmpfs owned by the image's user.
+      - name: starts without a backend, reaches it later, no warnings
+        run: |
+          set -euo pipefail
+          opts=(--read-only --tmpfs /tmp:uid=10001,gid=10001 --tmpfs /var/cache/nginx:uid=10001,gid=10001
+                --tmpfs /var/run:uid=10001,gid=10001)
+          docker network create lazy >/dev/null
+          docker run -d --name web --network lazy -p 18081:8080 "${opts[@]}" frontend:pr-check >/dev/null
+          up=no
+          for _ in $(seq 1 30); do curl -sf -o /dev/null localhost:18081/health && { up=yes; break; }; sleep 1; done
+          [[ "${up}" == yes ]] || { echo "::error::no /health without a backend"; docker logs web; exit 1; }
+          code="$(curl -s -o /dev/null -w '%{http_code}' localhost:18081/api/healthz)"
+          [[ "${code}" == 502 ]] || { echo "::error::/api/healthz without a backend: ${code}, want 502"; exit 1; }
+          # A stand-in backend named "backend": any answer but 502 proves nginx found it.
+          docker run -d --name backend --network lazy nginx:1.31-alpine >/dev/null
+          code=502
+          for _ in $(seq 1 30); do
+            code="$(curl -s -o /dev/null -w '%{http_code}' localhost:18081/api/healthz)"; [[ "${code}" != 502 ]] && break; sleep 1
+          done
+          [[ "${code}" != 502 ]] || { echo "::error::/api/healthz still 502 after the backend started"; docker logs web; exit 1; }
+          logs="$(docker logs web 2>&1)"
+          docker rm -f web backend >/dev/null; docker network rm lazy >/dev/null
+          echo "without a backend: 502; with it: ${code}"
+          if grep -E '\[(warn|emerg)\]|can not modify' <<<"${logs}"; then echo "::error::warnings at start"; exit 1; fi
+          # BACKEND_HOST / BACKEND_PORT go into nginx's configuration: anything but a DNS name and a port
+          # number is refused at start.
+          nl=$'\n'
+          for bad in 'BACKEND_HOST=back;end' 'BACKEND_HOST=a b' "BACKEND_HOST=backend${nl}};" 'BACKEND_HOST=-x' \
+                     'BACKEND_PORT=80}' "BACKEND_PORT=80${nl}1" 'BACKEND_PORT=0' 'BACKEND_PORT=99999' 'BACKEND_PORT=000080'; do
+            if docker run --rm -e "${bad}" frontend:pr-check nginx -t >/dev/null 2>&1; then
+              echo "::error::${bad} was accepted"; exit 1
+            fi
+            printf '%q: refused\n' "${bad}"   # %q shows a newline as $'\n'
+
+          done
 
       # RANDOM_ERROR_RATE (nginx/50-fault-injection.sh): run as in the cluster - read-only root,
       # writable tmpfs owned by the image's user - and count 100 answers per case.
       - name: RANDOM_ERROR_RATE - off, all, a share; /health spared; invalid values refused
         run: |
           set -euo pipefail
-          opts=(--read-only --add-host backend:127.0.0.1 -p 18080:8080
+          opts=(--read-only -p 18080:8080
                 --tmpfs /tmp:uid=10001,gid=10001 --tmpfs /var/cache/nginx:uid=10001,gid=10001
                 --tmpfs /var/run:uid=10001,gid=10001)
           count() {  # count <path> <code>: how many of 100 requests answered <code>
