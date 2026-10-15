@@ -96,11 +96,14 @@ jobs:
           if grep -E '\[(warn|emerg)\]|can not modify' <<<"${logs}"; then echo "::error::warnings at start"; exit 1; fi
           # BACKEND_HOST / BACKEND_PORT go into nginx's configuration: anything but a DNS name and a port
           # number is refused at start.
-          for bad in 'BACKEND_HOST=back;end' 'BACKEND_HOST=a b' 'BACKEND_PORT=80}' 'BACKEND_PORT=0' 'BACKEND_PORT=99999'; do
+          nl=$'\n'
+          for bad in 'BACKEND_HOST=back;end' 'BACKEND_HOST=a b' "BACKEND_HOST=backend${nl}};" 'BACKEND_HOST=-x' \
+                     'BACKEND_PORT=80}' "BACKEND_PORT=80${nl}1" 'BACKEND_PORT=0' 'BACKEND_PORT=99999' 'BACKEND_PORT=000080'; do
             if docker run --rm -e "${bad}" frontend:pr-check nginx -t >/dev/null 2>&1; then
               echo "::error::${bad} was accepted"; exit 1
             fi
-            echo "${bad}: refused"
+            printf '%q: refused\n' "${bad}"   # %q shows a newline as $'\n'
+
           done
 
       # RANDOM_ERROR_RATE (nginx/50-fault-injection.sh): run as in the cluster - read-only root,

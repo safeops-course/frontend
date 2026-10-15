@@ -27,11 +27,20 @@ port="${BACKEND_PORT:-80}"
 
 # Both values are written into nginx's configuration: only a DNS name and a port number, so nothing
 # else (a ";", a "}", a space) can change it. A wrong value stops the start with a clear message.
-if ! printf '%s' "${host}" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$'; then
-  echo "45-backend-upstream.sh: BACKEND_HOST='${host}' is not a DNS name (letters, digits, '.', '-')" >&2
-  exit 1
-fi
-if ! printf '%s' "${port}" | grep -Eq '^[0-9]{1,5}$' || [ "${port}" -lt 1 ] || [ "${port}" -gt 65535 ]; then
+# case patterns, not grep: grep checks line by line, so "backend<newline>}..." would pass on its first
+# line. A pattern matches the whole value, newlines included.
+case "${host}" in
+  '' | *[!A-Za-z0-9.-]* | [.-]* | *[.-])
+    echo "45-backend-upstream.sh: BACKEND_HOST='${host}' is not a DNS name (letters, digits, '.', '-')" >&2
+    exit 1 ;;
+esac
+case "${port}" in
+  '' | *[!0-9]* | ??????*)
+    echo "45-backend-upstream.sh: BACKEND_PORT='${port}' is not a port number (1-65535)" >&2
+    exit 1 ;;
+esac
+# Digits only and at most 5 of them, so the numeric test below cannot fail on the value itself.
+if [ "${port}" -lt 1 ] || [ "${port}" -gt 65535 ]; then
   echo "45-backend-upstream.sh: BACKEND_PORT='${port}' is not a port number (1-65535)" >&2
   exit 1
 fi
