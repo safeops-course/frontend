@@ -106,6 +106,7 @@ nginx/
   nginx.conf                # Main nginx config
   default.conf              # Server block (SPA routing, /config.js, /health)
   security-headers.conf     # Included in every location
+  40-listen.sh              # Entrypoint: listen 8080 (+ [::]:8080 when the pod has IPv6) -> /tmp/nginx-listen.conf
   45-backend-upstream.sh    # Entrypoint: resolver + backend name -> /tmp/nginx-backend.conf
   50-fault-injection.sh     # Entrypoint: RANDOM_ERROR_RATE -> /tmp/nginx-fault.conf
 Dockerfile                   # Multi-stage: node builder → nginx runtime
@@ -151,7 +152,9 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 
 ## Nginx Configuration
 
-- Listens on port **8080** (non-root compatible)
+- Listens on port **8080** (non-root compatible), on IPv4 and - when the pod has IPv6 (`/proc/net/if_inet6`) - on
+  IPv6 too: `nginx/40-listen.sh` writes `/tmp/nginx-listen.conf` at start. A dual-stack cluster may connect over
+  IPv6; `listen [::]` without IPv6 in the kernel would stop nginx, so it is conditional
 - SPA routing: all routes fall back to `index.html`
 - `/config.js` served from `/tmp/config.js` (runtime-generated) with no-cache headers
 - `/health` endpoint returns 200 for container health checks
@@ -164,7 +167,7 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
   purpose: a `BACKEND_PORT` variable would collide with Kubernetes service links (`BACKEND_PORT=tcp://<ip>:80` in every pod
   started after the Service `backend` exists)
 - A clean start log: no `user` directive (nginx runs as appuser already) and no `10-listen-on-ipv6-by-default.sh`
-  (it cannot edit the read-only `default.conf`); pr.yml fails on any `[warn]`/`[emerg]` at start
+  (it cannot edit the read-only `default.conf` - 40-listen.sh does the same in /tmp); pr.yml fails on any `[warn]`/`[emerg]` at start
 - Security headers (CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy) live in
   `nginx/security-headers.conf` and are included in EVERY location (nginx does not inherit add_header
   into a location that has its own). No inline scripts in index.html (CSP `script-src 'self'`).
