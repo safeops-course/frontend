@@ -106,6 +106,7 @@ nginx/
   nginx.conf                # Main nginx config
   default.conf              # Server block (SPA routing, /config.js, /health)
   security-headers.conf     # Included in every location
+  42-listen-ipv6.sh         # Entrypoint: listen [::]:8080 when the pod has IPv6 -> /tmp/nginx-listen-ipv6.conf
   45-backend-upstream.sh    # Entrypoint: resolver + backend name -> /tmp/nginx-backend.conf
   50-fault-injection.sh     # Entrypoint: RANDOM_ERROR_RATE -> /tmp/nginx-fault.conf
 Dockerfile                   # Multi-stage: node builder → nginx runtime
@@ -151,7 +152,9 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
 
 ## Nginx Configuration
 
-- Listens on port **8080** (non-root compatible)
+- Listens on port **8080** (non-root compatible), on IPv4 and - when the pod has IPv6 (`/proc/net/if_inet6`) - on
+  IPv6 too: `nginx/42-listen-ipv6.sh` writes `/tmp/nginx-listen-ipv6.conf` at start, included by a glob (no file =
+  IPv4 only, no error). A dual-stack cluster may connect over IPv6; `listen [::]` without IPv6 in the kernel would stop nginx
 - SPA routing: all routes fall back to `index.html`
 - `/config.js` served from `/tmp/config.js` (runtime-generated) with no-cache headers
 - `/health` endpoint returns 200 for container health checks
@@ -164,7 +167,7 @@ Fallback chain: `window.__ENV__` → `import.meta.env` → localhost defaults.
   purpose: a `BACKEND_PORT` variable would collide with Kubernetes service links (`BACKEND_PORT=tcp://<ip>:80` in every pod
   started after the Service `backend` exists)
 - A clean start log: no `user` directive (nginx runs as appuser already) and no `10-listen-on-ipv6-by-default.sh`
-  (it cannot edit the read-only `default.conf`); pr.yml fails on any `[warn]`/`[emerg]` at start
+  (it cannot edit the read-only `default.conf` - 42-listen-ipv6.sh does the same in /tmp); pr.yml fails on any `[warn]`/`[emerg]` at start
 - Security headers (CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy) live in
   `nginx/security-headers.conf` and are included in EVERY location (nginx does not inherit add_header
   into a location that has its own). No inline scripts in index.html (CSP `script-src 'self'`).
@@ -177,7 +180,7 @@ The same checks run locally first: `.pre-commit-config.yaml` (gitleaks and no co
 `npm run build` and `npm audit` on push), gitleaks pinned to the version in pr.yml - change them together.
 Run them before pushing; do not leave a build or audit failure for CI to find.
 
-- **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; the image run as in the cluster (read-only root): starts without a backend (`/health` 200, `/api/healthz` 502), reaches one once it starts, no `[warn]`/`[emerg]` in the start log; service-link variables (`BACKEND_PORT=tcp://...`) change nothing; RANDOM_ERROR_RATE cases; gitleaks v8.30.1 on the PR commits
+- **pr.yml** — on every pull request (all must pass before merge): `npm ci`, `npm run build`, `npm audit --audit-level=high --omit=dev`; `docker build` (no push) + `nginx -t`; the image run as in the cluster (read-only root): starts without a backend (`/health` 200, `/api/healthz` 502), reaches one once it starts, answers on `[::1]` when the container has IPv6 (else no `[::]` listen), no `[warn]`/`[emerg]` in the start log; service-link variables (`BACKEND_PORT=tcp://...`) change nothing; RANDOM_ERROR_RATE cases; gitleaks v8.30.1 on the PR commits
 - **build.yml** — on push to main/develop: build each published platform (linux/amd64, linux/arm64) locally and **Trivy-scan it before anything is pushed** (blocking on fixable CRITICAL/HIGH), then push exactly those scanned images and join them into one multi-platform index (`docker buildx imagetools create`, no second build), cosign sign + SBOM attestation on the index digest + SLSA build provenance (`actions/attest-build-provenance`, verify with `gh attestation verify`)
 - **promote-production.yml** — manual: Trivy gate (blocking, CRITICAL only), re-tag staging image as production, create GitHub Release, bump version tag
 

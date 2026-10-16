@@ -71,7 +71,7 @@ jobs:
       # nginx resolves the backend per request (nginx/45-backend-upstream.sh): it must start without
       # one - /health 200, /api/ 502 - with a clean log (no warn/emerg/"can not modify"), and reach one
       # once it is there. Run as in the cluster: read-only root, tmpfs owned by the image's user.
-      - name: starts without a backend, reaches it later, no warnings
+      - name: starts without a backend, reaches it later, IPv4 and IPv6, no warnings
         run: |
           set -euo pipefail
           opts=(--read-only --tmpfs /tmp:uid=10001,gid=10001 --tmpfs /var/cache/nginx:uid=10001,gid=10001
@@ -81,6 +81,17 @@ jobs:
           up=no
           for _ in $(seq 1 30); do curl -sf -o /dev/null localhost:18081/health && { up=yes; break; }; sleep 1; done
           [[ "${up}" == yes ]] || { echo "::error::no /health without a backend"; docker logs web; exit 1; }
+          # nginx/42-listen-ipv6.sh: where the container has IPv6, nginx answers on [::1] too (a dual-stack
+          # cluster may connect over IPv6); where it has none, no [::] listen is written (it would stop nginx).
+          if docker exec web test -e /proc/net/if_inet6; then
+            docker exec web curl -sf -o /dev/null 'http://[::1]:8080/health' \
+              || { echo "::error::the container has IPv6 but nginx does not answer on [::1]:8080"; docker logs web; exit 1; }
+            echo "IPv6: /health on [::1] answers"
+          else
+            ! docker exec web test -e /tmp/nginx-listen-ipv6.conf \
+              || { echo "::error::no IPv6 in the container, yet a [::] listen was written"; docker logs web; exit 1; }
+            echo "IPv6: none in this container - IPv4 only, as expected"
+          fi
           code="$(curl -s -o /dev/null -w '%{http_code}' localhost:18081/api/healthz)"
           [[ "${code}" == 502 ]] || { echo "::error::/api/healthz without a backend: ${code}, want 502"; exit 1; }
           # A stand-in backend named "backend": any answer but 502 proves nginx found it.
