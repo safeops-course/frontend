@@ -36,10 +36,10 @@ COPY nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
 COPY --chmod=0755 nginx/50-fault-injection.sh /docker-entrypoint.d/50-fault-injection.sh
 # The backend's full name and the resolver -> /tmp/nginx-backend.conf at every start (per-request DNS)
 COPY --chmod=0755 nginx/45-backend-upstream.sh /docker-entrypoint.d/45-backend-upstream.sh
-# The listen directives -> /tmp/nginx-listen.conf at every start (IPv6 only where the pod has it)
-COPY --chmod=0755 nginx/40-listen.sh /docker-entrypoint.d/40-listen.sh
+# listen [::]:8080 -> /tmp/nginx-listen-ipv6.conf at every start, only where the pod has IPv6
+COPY --chmod=0755 nginx/42-listen-ipv6.sh /docker-entrypoint.d/42-listen-ipv6.sh
 # The image's own script edits default.conf to add an IPv6 listen; the root filesystem is read-only in
-# the cluster, so it only printed "can not modify" at every start - 40-listen.sh does it in /tmp instead.
+# the cluster, so it only printed "can not modify" at every start - 42-listen-ipv6.sh does it in /tmp instead.
 RUN rm /docker-entrypoint.d/10-listen-on-ipv6-by-default.sh
 
 # Copy built assets from builder stage

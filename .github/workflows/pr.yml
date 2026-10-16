@@ -81,10 +81,17 @@ jobs:
           up=no
           for _ in $(seq 1 30); do curl -sf -o /dev/null localhost:18081/health && { up=yes; break; }; sleep 1; done
           [[ "${up}" == yes ]] || { echo "::error::no /health without a backend"; docker logs web; exit 1; }
-          # nginx/40-listen.sh: where the container has IPv6 (Docker gives it ::1), nginx listens there too -
-          # a dual-stack cluster may connect over IPv6.
-          docker exec web curl -sf -o /dev/null 'http://[::1]:8080/health' \
-            || { echo "::error::nginx does not answer on IPv6 ([::1]:8080)"; docker exec web cat /tmp/nginx-listen.conf; exit 1; }
+          # nginx/42-listen-ipv6.sh: where the container has IPv6, nginx answers on [::1] too (a dual-stack
+          # cluster may connect over IPv6); where it has none, no [::] listen is written (it would stop nginx).
+          if docker exec web test -e /proc/net/if_inet6; then
+            docker exec web curl -sf -o /dev/null 'http://[::1]:8080/health' \
+              || { echo "::error::the container has IPv6 but nginx does not answer on [::1]:8080"; docker logs web; exit 1; }
+            echo "IPv6: /health on [::1] answers"
+          else
+            ! docker exec web test -e /tmp/nginx-listen-ipv6.conf \
+              || { echo "::error::no IPv6 in the container, yet a [::] listen was written"; docker logs web; exit 1; }
+            echo "IPv6: none in this container - IPv4 only, as expected"
+          fi
           code="$(curl -s -o /dev/null -w '%{http_code}' localhost:18081/api/healthz)"
           [[ "${code}" == 502 ]] || { echo "::error::/api/healthz without a backend: ${code}, want 502"; exit 1; }
           # A stand-in backend named "backend": any answer but 502 proves nginx found it.
