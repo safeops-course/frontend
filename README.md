@@ -33,6 +33,7 @@ The app uses `window.__ENV__` for runtime config, injected by an nginx entrypoin
 | `VITE_API_URL` | Backend API base URL |
 | `VITE_UPTRACE_DSN` | Uptrace DSN for browser tracing |
 | `ENVIRONMENT` | Current environment name |
+| `CLUSTER_NAME` | Cluster the pod runs in; the browser's spans carry it as `k8s.cluster.name` (unset = no attribute) |
 | `RANDOM_ERROR_RATE` | nginx, not the SPA: probability 0-1 that a request answers 500 (`/health` spared) - fault injection for the canary lab (Chapter 19); unset = off, an invalid value stops the start (`nginx/50-fault-injection.sh`). Never set in production |
 | `VERSION` | App version |
 | `COMMIT` | Git commit SHA |

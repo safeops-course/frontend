@@ -20,6 +20,8 @@ What the browser sends, and where to find it.
     `ENV VERSION=${APP_VERSION}`), unless the Deployment overrides it
   - `deployment.environment.name` - `ENVIRONMENT` from the runtime config (the same attribute the
     backend sends)
+  - `k8s.cluster.name` - `CLUSTER_NAME` from the runtime config, only when it is set (the Deployment
+    sets it, as it sets the backend's)
 
 ## Where spans go
 
@@ -76,7 +78,7 @@ The dashboard polls every 5 seconds while its tab is visible and stops when it i
 ## Configuration
 
 Runtime (`/config.js`, from the container environment): `VITE_UPTRACE_DSN`, `VITE_API_URL`,
-`ENVIRONMENT`, `VERSION`, `COMMIT`, `BUILD_DATE`.
+`ENVIRONMENT`, `CLUSTER_NAME`, `VERSION`, `COMMIT`, `BUILD_DATE`.
 
 Build time (Vite, baked into the bundle): `VITE_OTEL_COLLECTOR_URL`.
 
